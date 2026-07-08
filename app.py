@@ -47,7 +47,7 @@ if query:
         resume = info.get('Résumé_analytique_détaillé', "")
         if resume is None: resume = ""
         
-        # Sécurisation ultime : on convertit tout en string pour éviter les TypeError
+        # Sécurisation ultime
         try:
             contenu_str = (str(sujets_str) + " " + str(resume)).lower()
         except:
@@ -60,8 +60,10 @@ if query:
                 st.write(f"**Objet :** {info.get('Objet', 'Non spécifié')}")
                 st.write(f"**Résumé :** {resume}")
                 st.write(f"**Sujets :** {sujets_str}")
-                # Lien cliquable direct vers le document
-                st.markdown(f"[🔗 Ouvrir le document sur Google Drive](https://docs.google.com/document/d/{file_id}/view)")
+                
+                # Utilisation du webViewLink officiel stocké dans le JSON ou lien de repli
+                lien = info.get('webViewLink', f"https://drive.google.com/open?id={file_id}")
+                st.markdown(f"[🔗 Ouvrir le document sur Google Drive]({lien})")
             found = True
             
     if not found:

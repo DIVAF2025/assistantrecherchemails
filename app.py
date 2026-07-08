@@ -39,16 +39,19 @@ if query:
     found = False
     
     for file_id, info in data.items():
-        # Extraction sécurisée avec gestion des valeurs None
+        # Extraction sécurisée et conversion forcée en texte
         sujets = info.get('Sujets_traités', [])
         if sujets is None: sujets = []
-        
-        # Conversion propre en texte pour la recherche
         sujets_str = ", ".join(sujets) if isinstance(sujets, list) else str(sujets)
+        
         resume = info.get('Résumé_analytique_détaillé', "")
         if resume is None: resume = ""
         
-        contenu_str = (sujets_str + " " + resume).lower()
+        # Sécurisation ultime : on convertit tout en string pour éviter les TypeError
+        try:
+            contenu_str = (str(sujets_str) + " " + str(resume)).lower()
+        except:
+            contenu_str = ""
         
         # Comparaison
         if query.lower() in contenu_str:

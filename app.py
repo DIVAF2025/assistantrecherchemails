@@ -1,3 +1,12 @@
+import streamlit as st
+import json
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+
+# Votre code commence ici...
+@st.cache_data(ttl=600)
+def charger_donnees_depuis_drive():
+    # ... le reste de votre fonction ...
 @st.cache_data(ttl=600)
 def charger_donnees_depuis_drive():
     # Reconstruction manuelle du dictionnaire à partir des nouvelles clés séparées

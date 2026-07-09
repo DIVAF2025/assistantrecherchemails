@@ -11,7 +11,8 @@ st.set_page_config(page_title="Explorateur Fiscal Sémantique", layout="wide")
 st.title("🧠 Explorateur Fiscal Sémantique")
 
 # Initialisation des clients
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# ATTENTION : NE FAITES CELA QUE POUR UN TEST RAPIDE
+client = OpenAI(api_key="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")
 
 @st.cache_data(ttl=600)
 def charger_donnees_depuis_drive():

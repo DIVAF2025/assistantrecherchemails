@@ -5,7 +5,7 @@ from openai import OpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 
 # Initialisation OpenAI
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+client = OpenAI(api_key="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")
 
 def get_embedding(text):
     response = client.embeddings.create(input=[text], model="text-embedding-3-small")

@@ -4,7 +4,7 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-st.set_page_config(page_title="Recherche Fiscale", page_icon="📂")
+st.set_page_config(page_title="Recherche Documentaire", page_icon="📂")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 @st.cache_data(ttl=3600)

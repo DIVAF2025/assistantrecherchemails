@@ -4,8 +4,16 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# 1. Configuration
-st.set_page_config(page_title="Explorateur Fiscal Intelligent", page_icon="📂")
+# CSS pour réduire la police et styliser les éléments
+st.markdown("""
+    <style>
+    .main { font-size: 14px !important; }
+    .stMarkdown, .stText { font-size: 14px !important; }
+    .css-1offfwp { font-size: 14px !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.set_page_config(page_title="Recherche Fiscale", page_icon="📂")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 @st.cache_data(ttl=3600)
@@ -20,77 +28,50 @@ def charger_donnees_depuis_drive():
     return json.loads(request.execute())
 
 def filtrage_intelligent(query, data, top_n=50):
-    """Filtre les 100 documents les plus pertinents sans erreur de type."""
     query_words = set(query.lower().replace(" et ", " ").split())
     scores = []
-    
     for doc_id, doc in data.items():
         if not isinstance(doc, dict): continue
-        
-        # Extraction sécurisée de chaque champ en chaîne de texte
-        obj = str(doc.get('Objet', ''))
-        res = str(doc.get('Résumé_analytique_détaillé', ''))
-        sujets_raw = doc.get('Sujets_traités', [])
-        sujets = ", ".join([str(s) for s in sujets_raw]) if isinstance(sujets_raw, list) else str(sujets_raw)
-        
-        texte_doc = (obj + " " + res + " " + sujets).lower()
-        
+        texte_doc = (str(doc.get('Objet', '')) + " " + str(doc.get('Résumé_analytique_détaillé', ''))).lower()
         score = sum(1 for mot in query_words if mot in texte_doc)
-        if query.lower() in texte_doc:
-            score += 5
-            
+        if query.lower() in texte_doc: score += 5
         scores.append((doc_id, doc, score))
-    
     scores.sort(key=lambda x: x[2], reverse=True)
     return [s for s in scores if s[2] > 0][:top_n]
 
-def analyser_par_ia(query, data):
-    """Analyse sémantique fine par GPT-4o."""
+def obtenir_resultats_structures(query, data):
     candidats = filtrage_intelligent(query, data)
-    
-    if not candidats:
-        return "Aucun document trouvé correspondant à vos critères."
+    if not candidats: return None
 
-    contexte = ""
-    for doc_id, doc, _ in candidats:
-        obj = str(doc.get('Objet', 'N/A'))
-        date = str(doc.get('Date', 'N/A'))
-        resume = str(doc.get('Résumé_analytique_détaillé', ''))
-        sujets_raw = doc.get('Sujets_traités', [])
-        sujets = ", ".join([str(s) for s in sujets_raw]) if isinstance(sujets_raw, list) else str(sujets_raw)
-        
-        contexte += f"ID: {doc_id} | NOM: {obj} | DATE: {date} | SUJETS: {sujets} | RÉSUMÉ: {resume}\n---\n"
-
+    # On demande à l'IA de retourner une liste JSON pour faciliter l'affichage
     prompt = f"""
-    Tu es un bibliothécaire fiscal expert. Requête : "{query}"
-    
-    Analyse ces documents et classe les 10 plus pertinents par ordre de pertinence décroissant.
-    Retourne uniquement le format suivant :
-    ---
-    NOM: [Objet]
-    DATE: [Date]
-    RÉSUMÉ: [Résumé]
-    LIEN: https://drive.google.com/open?id={doc_id}
-    ---
-    Documents :
-    {contexte}
+    Requête : "{query}"
+    Analyse ces documents. Identifie les 10 plus pertinents.
+    Retourne la réponse UNIQUEMENT sous forme de liste JSON d'objets, avec les clés : "nom", "date", "resume", "id".
+    {candidats}
     """
-    
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "system", "content": "Expert fiscal précis."},
-                  {"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        response_format={ "type": "json_object" }
     )
-    return response.choices[0].message.content
+    return json.loads(response.choices[0].message.content).get("documents", [])
 
-# 2. Interface Streamlit
-st.title("📂 Recherche Fiscale Avancée")
+# Interface
+st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
-query = st.text_input("Quelle information recherchez-vous ?")
+query = st.text_input("Posez votre question :")
 
 if query:
-    with st.spinner("Analyse intelligente en cours..."):
+    with st.spinner("Analyse et structuration..."):
         try:
-            st.markdown(analyser_par_ia(query, data))
+            results = obtenir_resultats_structures(query, data)
+            if results:
+                for res in results:
+                    with st.expander(f"📄 {res['nom']} ({res['date']})"):
+                        st.write(f"**Résumé :** {res['resume']}")
+                        st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
+            else:
+                st.info("Aucun résultat trouvé.")
         except Exception as e:
-            st.error(f"Une erreur est survenue : {e}")
+            st.error("Erreur lors de l'affichage.")

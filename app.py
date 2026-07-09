@@ -4,8 +4,8 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# 1. Configuration
-st.set_page_config(page_title="Recherche Fiscale Intelligente", page_icon="🧠")
+# 1. Configuration et authentification
+st.set_page_config(page_title="Explorateur Fiscal Intelligent", page_icon="🧠")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 @st.cache_data(ttl=3600)
@@ -19,48 +19,74 @@ def charger_donnees_depuis_drive():
     request = service.files().get_media(fileId=file_id)
     return json.loads(request.execute())
 
-def trier_documents_par_pertinence(query, data):
-    # On prépare le contexte pour l'IA
-    contexte = ""
+def filtrage_intelligent(query, data, top_n=100):
+    """
+    Sélectionne les 100 documents les plus pertinents par mots-clés.
+    Résistant aux inversions de mots (ex: 'agents et cadres' vs 'cadres et agents').
+    """
+    query_words = set(query.lower().replace(" et ", " ").split())
+    scores = []
+    
     for doc_id, doc in data.items():
+        texte_doc = (doc.get('Objet', '') + " " + doc.get('Résumé_analytique_détaillé', '')).lower()
+        score = sum(1 for mot in query_words if mot in texte_doc)
+        
+        # Bonus si la requête entière est présente
+        if query.lower() in texte_doc:
+            score += 5
+            
+        scores.append((doc_id, doc, score))
+    
+    # Tri par score décroissant et on garde les 100 premiers ayant au moins un mot en commun
+    scores.sort(key=lambda x: x[2], reverse=True)
+    return [s for s in scores if s[2] > 0][:top_n]
+
+def analyser_par_ia(query, data):
+    # 1. Filtrage préalable pour rester sous la limite de tokens
+    candidats = filtrage_intelligent(query, data)
+    
+    if not candidats:
+        return "Aucun document trouvé correspondant à vos critères."
+
+    # 2. Construction du contexte
+    contexte = ""
+    for doc_id, doc, _ in candidats:
         contexte += f"ID: {doc_id} | Objet: {doc.get('Objet', 'N/A')} | Date: {doc.get('Date', 'N/A')} | Résumé: {doc.get('Résumé_analytique_détaillé', '')}\n---\n"
 
-    # Le prompt demande à l'IA de faire le tri et de formater le résultat
+    # 3. Prompt structuré
     prompt = f"""
-    Tu es un expert en recherche documentaire fiscale.
-    Requête utilisateur : "{query}"
+    Tu es un bibliothécaire fiscal expert. Requête utilisateur : "{query}"
     
-    Parmi la liste de documents ci-dessous, identifie les 10 plus pertinents.
-    Classe-les du plus pertinent au moins pertinent.
-    
-    Pour chaque document identifié, retourne-le sous ce format strict :
+    Analyse les {len(candidats)} documents fournis.
+    Identifie et classe les 10 plus pertinents par ordre de pertinence décroissant.
+    Pour chaque document, retourne strictement ce format :
     ---
-    NOM: [Objet du document]
+    NOM: [Objet]
     DATE: [Date]
     RÉSUMÉ: [Résumé_analytique_détaillé]
     LIEN: https://drive.google.com/open?id=[ID]
     ---
     
-    Liste des documents :
+    Documents à analyser :
     {contexte}
     """
     
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "system", "content": "Tu es un bibliothécaire fiscal précis."},
+        messages=[{"role": "system", "content": "Tu es un expert fiscal précis."},
                   {"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content
 
-# 2. Interface
-st.title("📂 Recherche Fiscale par Compréhension")
+# 2. Interface Streamlit
+st.title("📂 Recherche Fiscale Avancée")
 data = charger_donnees_depuis_drive()
-query = st.text_input("Posez votre question pour une analyse sémantique globale :")
+query = st.text_input("Quelle information recherchez-vous dans vos documents ?")
 
 if query:
-    with st.spinner("Analyse intelligente de tous les documents en cours..."):
+    with st.spinner("Analyse intelligente en cours..."):
         try:
-            resultats_formates = trier_documents_par_pertinence(query, data)
-            st.markdown(resultats_formates)
+            resultats = analyser_par_ia(query, data)
+            st.markdown(resultats)
         except Exception as e:
             st.error(f"Une erreur est survenue lors de l'analyse : {e}")

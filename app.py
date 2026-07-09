@@ -4,8 +4,8 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# 1. Configuration et authentification
-st.set_page_config(page_title="Explorateur Fiscal Intelligent", page_icon="🧠")
+# 1. Configuration
+st.set_page_config(page_title="Recherche Fiscale", page_icon="📂")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 @st.cache_data(ttl=3600)
@@ -20,75 +20,66 @@ def charger_donnees_depuis_drive():
     return json.loads(request.execute())
 
 def filtrage_intelligent(query, data, top_n=100):
-    """
-    Sélectionne les 100 documents les plus pertinents par mots-clés.
-    Le système ignore l'ordre des mots pour éviter les erreurs d'inversion.
-    """
     query_words = set(query.lower().replace(" et ", " ").split())
     scores = []
     
     for doc_id, doc in data.items():
-        # Concaténation pour recherche étendue
-        texte_doc = (doc.get('Objet', '') + " " + doc.get('Résumé_analytique_détaillé', '')).lower()
-        # Calcul du score basé sur la présence de mots-clés
-        score = sum(1 for mot in query_words if mot in texte_doc)
+        # Concaténation sécurisée de tous les champs texte pour la recherche
+        obj = str(doc.get('Objet', ''))
+        res = str(doc.get('Résumé_analytique_détaillé', ''))
+        sujets = ", ".join(doc.get('Sujets_traités', [])) if isinstance(doc.get('Sujets_traités'), list) else str(doc.get('Sujets_traités', ''))
         
-        # Bonus significatif si la requête est présente textuellement
+        texte_doc = (obj + " " + res + " " + sujets).lower()
+        
+        score = sum(1 for mot in query_words if mot in texte_doc)
         if query.lower() in texte_doc:
             score += 5
             
         scores.append((doc_id, doc, score))
     
-    # Tri par score décroissant et on garde les 100 meilleurs
     scores.sort(key=lambda x: x[2], reverse=True)
     return [s for s in scores if s[2] > 0][:top_n]
 
 def analyser_par_ia(query, data):
-    # 1. Pré-filtrage pour rester sous la limite de tokens
     candidats = filtrage_intelligent(query, data)
     
     if not candidats:
         return "Aucun document trouvé correspondant à vos critères."
 
-    # 2. Construction du contexte réduit pour l'IA
     contexte = ""
     for doc_id, doc, _ in candidats:
-        contexte += f"ID: {doc_id} | Objet: {doc.get('Objet', 'N/A')} | Date: {doc.get('Date', 'N/A')} | Résumé: {doc.get('Résumé_analytique_détaillé', '')}\n---\n"
+        sujets = ", ".join(doc.get('Sujets_traités', [])) if isinstance(doc.get('Sujets_traités'), list) else str(doc.get('Sujets_traités', ''))
+        contexte += f"ID: {doc_id} | Objet: {doc.get('Objet', 'N/A')} | Date: {doc.get('Date', 'N/A')} | Sujets: {sujets} | Résumé: {doc.get('Résumé_analytique_détaillé', '')}\n---\n"
 
-    # 3. Analyse et classement par GPT-4o
     prompt = f"""
-    Tu es un bibliothécaire fiscal expert. Requête utilisateur : "{query}"
-    
-    Analyse les {len(candidats)} documents fournis ci-dessous.
-    Identifie et classe les 10 documents les plus pertinents par ordre de pertinence décroissant.
-    Pour chaque document identifié, retourne strictement ce format :
+    Tu es un expert fiscal. Requête : "{query}"
+    Analyse ces documents et classe les 10 plus pertinents.
+    Retourne uniquement le format suivant :
     ---
     NOM: [Objet]
     DATE: [Date]
-    RÉSUMÉ: [Résumé_analytique_détaillé]
-    LIEN: https://drive.google.com/open?id=[ID]
+    RÉSUMÉ: [Résumé]
+    LIEN: https://drive.google.com/open?id={doc_id}
     ---
-    
-    Documents à analyser :
+    Documents :
     {contexte}
     """
     
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "system", "content": "Tu es un expert fiscal précis."},
+        messages=[{"role": "system", "content": "Expert fiscal précis."},
                   {"role": "user", "content": prompt}]
     )
     return response.choices[0].message.content
 
-# 2. Interface Streamlit
-st.title("📂 Recherche Fiscale Avancée")
+# 2. Interface
+st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
-query = st.text_input("Quelle information recherchez-vous dans vos documents ?")
+query = st.text_input("Rechercher :")
 
 if query:
-    with st.spinner("Analyse intelligente en cours..."):
+    with st.spinner("Analyse..."):
         try:
-            resultats = analyser_par_ia(query, data)
-            st.markdown(resultats)
+            st.markdown(analyser_par_ia(query, data))
         except Exception as e:
-            st.error(f"Une erreur est survenue lors de l'analyse : {e}")
+            st.error(f"Erreur : {e}")

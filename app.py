@@ -19,19 +19,27 @@ def charger_donnees_depuis_drive():
     return json.loads(request.execute())
 
 def obtenir_resultats_structures(query, data):
-    # On prépare tout le catalogue en texte simple pour l'IA
-    catalogue = ""
+    # 1. Filtrage local (Python pur) pour réduire le volume avant l'IA
+    query_words = set(query.lower().replace(" et ", " ").split())
+    candidats = []
     for doc_id, doc in data.items():
-        catalogue += f"ID: {doc_id} | OBJET: {doc.get('Objet', '')} | RÉSUMÉ: {doc.get('Résumé_analytique_détaillé', '')}\n"
+        texte = (str(doc.get('Objet', '')) + " " + str(doc.get('Résumé_analytique_détaillé', ''))).lower()
+        score = sum(1 for mot in query_words if mot in texte)
+        if score > 0:
+            candidats.append((doc_id, {"id": doc_id, "objet": doc.get('Objet'), "resume": doc.get('Résumé_analytique_détaillé')}, score))
     
-    # Prompt direct pour extraire les IDs des 10 plus pertinents
+    # On garde les 50 meilleurs
+    candidats.sort(key=lambda x: x[2], reverse=True)
+    top_50 = candidats[:50]
+    
+    # 2. Appel IA avec un contexte réduit (50 docs max)
+    catalogue_reduit = {c[0]: c[1] for c in top_50}
+    
     prompt = f"""
-    Requête utilisateur : "{query}"
-    Parmi les documents suivants, trouve les 10 plus pertinents. 
+    Requête : "{query}"
+    Parmi ces {len(catalogue_reduit)} documents, trouve les 10 plus pertinents.
     Retourne UNIQUEMENT une liste JSON d'IDs comme ceci: {{"ids": ["id1", "id2", ...]}}
-    
-    Catalogue :
-    {catalogue}
+    Catalogue : {json.dumps(catalogue_reduit)}
     """
     
     response = client.chat.completions.create(
@@ -40,21 +48,9 @@ def obtenir_resultats_structures(query, data):
         response_format={ "type": "json_object" }
     )
     
-    data_json = json.loads(response.choices[0].message.content)
-    ids_selectionnes = data_json.get("ids", [])
+    ids_selectionnes = json.loads(response.choices[0].message.content).get("ids", [])
     
-    # Construction de la réponse finale
-    resultats = []
-    for cid in ids_selectionnes:
-        if cid in data:
-            doc = data[cid]
-            resultats.append({
-                "id": cid,
-                "nom": doc.get('Objet', 'Sans nom'),
-                "date": doc.get('Date', 'N/A'),
-                "resume": doc.get('Résumé_analytique_détaillé', 'Aucun résumé disponible.')
-            })
-    return resultats
+    return [data[cid] for cid in ids_selectionnes if cid in data]
 
 st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
@@ -66,11 +62,11 @@ if query:
             results = obtenir_resultats_structures(query, data)
             if results:
                 for res in results:
-                    with st.expander(f"📄 {res['nom']} ({res['date']})"):
-                        st.write(f"**Résumé détaillé :**")
-                        st.write(res['resume'])
-                        st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
+                    with st.expander(f"📄 {res.get('Objet', 'Sans nom')} ({res.get('Date', 'N/A')})"):
+                        st.write("**Résumé détaillé :**")
+                        st.write(res.get('Résumé_analytique_détaillé', ''))
+                        st.markdown(f"🔗 [Accéder au document](https://drive.google.com/open?id={res.get('id', '')})")
             else:
-                st.warning("Aucun document ne semble correspondre à votre requête.")
+                st.warning("Aucun résultat.")
         except Exception as e:
             st.error(f"Erreur : {e}")

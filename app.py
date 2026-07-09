@@ -3,13 +3,9 @@ import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# Votre code commence ici...
 @st.cache_data(ttl=600)
 def charger_donnees_depuis_drive():
-    # ... le reste de votre fonction ...
-@st.cache_data(ttl=600)
-def charger_donnees_depuis_drive():
-    # Reconstruction manuelle du dictionnaire à partir des nouvelles clés séparées
+    # Reconstruction manuelle du dictionnaire à partir des secrets
     creds_dict = {
         "type": "service_account",
         "project_id": st.secrets["GOOGLE_PROJECT_ID"],
@@ -29,9 +25,16 @@ def charger_donnees_depuis_drive():
         scopes=["https://www.googleapis.com/auth/drive.readonly"]
     )
     
+    # Initialisation du service Drive
     service = build("drive", "v3", credentials=creds)
     
+    # Remplacez bien par VOTRE ID réel ici
     file_id = '137dKYWOv_u9FA6p25O2NteEdKnTkU7RN' 
+    
     request = service.files().get_media(fileId=file_id)
     content = request.execute()
     return json.loads(content)
+
+# Votre reste de code (l'interface Streamlit) doit commencer ici, sans indentation :
+st.title("Explorateur Fiscal Sémantique")
+# ... le reste de votre application ...

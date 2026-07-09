@@ -19,7 +19,7 @@ def charger_donnees_depuis_drive():
     request = service.files().get_media(fileId=file_id)
     return json.loads(request.execute())
 
-def filtrage_intelligent(query, data, top_n=100):
+def filtrage_intelligent(query, data, top_n=50):
     """Filtre les 100 documents les plus pertinents sans erreur de type."""
     query_words = set(query.lower().replace(" et ", " ").split())
     scores = []

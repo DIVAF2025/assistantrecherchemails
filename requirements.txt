@@ -1,7 +1,8 @@
 streamlit
 openai
-numpy
-scikit-learn
 google-api-python-client
+google-auth
 google-auth-httplib2
 google-auth-oauthlib
+numpy
+scikit-learn

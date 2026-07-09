@@ -22,44 +22,46 @@ def charger_donnees_depuis_drive():
 def filtrage_intelligent(query, data, top_n=100):
     """
     Sélectionne les 100 documents les plus pertinents par mots-clés.
-    Résistant aux inversions de mots (ex: 'agents et cadres' vs 'cadres et agents').
+    Le système ignore l'ordre des mots pour éviter les erreurs d'inversion.
     """
     query_words = set(query.lower().replace(" et ", " ").split())
     scores = []
     
     for doc_id, doc in data.items():
+        # Concaténation pour recherche étendue
         texte_doc = (doc.get('Objet', '') + " " + doc.get('Résumé_analytique_détaillé', '')).lower()
+        # Calcul du score basé sur la présence de mots-clés
         score = sum(1 for mot in query_words if mot in texte_doc)
         
-        # Bonus si la requête entière est présente
+        # Bonus significatif si la requête est présente textuellement
         if query.lower() in texte_doc:
             score += 5
             
         scores.append((doc_id, doc, score))
     
-    # Tri par score décroissant et on garde les 100 premiers ayant au moins un mot en commun
+    # Tri par score décroissant et on garde les 100 meilleurs
     scores.sort(key=lambda x: x[2], reverse=True)
     return [s for s in scores if s[2] > 0][:top_n]
 
 def analyser_par_ia(query, data):
-    # 1. Filtrage préalable pour rester sous la limite de tokens
+    # 1. Pré-filtrage pour rester sous la limite de tokens
     candidats = filtrage_intelligent(query, data)
     
     if not candidats:
         return "Aucun document trouvé correspondant à vos critères."
 
-    # 2. Construction du contexte
+    # 2. Construction du contexte réduit pour l'IA
     contexte = ""
     for doc_id, doc, _ in candidats:
         contexte += f"ID: {doc_id} | Objet: {doc.get('Objet', 'N/A')} | Date: {doc.get('Date', 'N/A')} | Résumé: {doc.get('Résumé_analytique_détaillé', '')}\n---\n"
 
-    # 3. Prompt structuré
+    # 3. Analyse et classement par GPT-4o
     prompt = f"""
     Tu es un bibliothécaire fiscal expert. Requête utilisateur : "{query}"
     
-    Analyse les {len(candidats)} documents fournis.
-    Identifie et classe les 10 plus pertinents par ordre de pertinence décroissant.
-    Pour chaque document, retourne strictement ce format :
+    Analyse les {len(candidats)} documents fournis ci-dessous.
+    Identifie et classe les 10 documents les plus pertinents par ordre de pertinence décroissant.
+    Pour chaque document identifié, retourne strictement ce format :
     ---
     NOM: [Objet]
     DATE: [Date]

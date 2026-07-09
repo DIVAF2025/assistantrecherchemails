@@ -60,9 +60,9 @@ def obtenir_resultats_structures(query, data):
             
     return resultats_finaux
 
-st.title("📂 Recherche Fiscale")
+st.title("📂 Recherche Documentaire")
 data = charger_donnees_depuis_drive()
-query = st.text_input("Posez votre question :")
+query = st.text_input("Que recherchez-vous ?")
 
 if query:
     with st.spinner("Analyse intelligente en cours..."):

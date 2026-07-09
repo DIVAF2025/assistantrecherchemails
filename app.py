@@ -4,12 +4,10 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# CSS pour réduire la police et styliser les éléments
+# CSS pour une interface plus légère
 st.markdown("""
     <style>
-    .main { font-size: 14px !important; }
-    .stMarkdown, .stText { font-size: 14px !important; }
-    .css-1offfwp { font-size: 14px !important; }
+    .stMarkdown, .stText, .stExpander { font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,35 +41,49 @@ def obtenir_resultats_structures(query, data):
     candidats = filtrage_intelligent(query, data)
     if not candidats: return None
 
-    # On demande à l'IA de retourner une liste JSON pour faciliter l'affichage
+    # On prépare la liste des candidats pour que l'IA choisisse juste les indices
+    # On envoie le moins de texte possible pour accélérer l'IA
+    liste_candidats = [{"id": cid, "objet": doc.get('Objet')} for cid, doc, _ in candidats]
+    
     prompt = f"""
-    Requête : "{query}"
-    Analyse ces documents. Identifie les 10 plus pertinents.
-    Retourne la réponse UNIQUEMENT sous forme de liste JSON d'objets, avec les clés : "nom", "date", "resume", "id".
-    {candidats}
+    Requête utilisateur : "{query}"
+    Parmi la liste suivante, identifie les 10 documents les plus pertinents et retourne uniquement leurs ID dans une liste JSON.
+    Liste : {json.dumps(liste_candidats)}
     """
+    
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         response_format={ "type": "json_object" }
     )
-    return json.loads(response.choices[0].message.content).get("documents", [])
+    
+    ids_selectionnes = json.loads(response.choices[0].message.content).get("ids", [])
+    
+    # On reconstruit la liste finale en récupérant le texte COMPLET depuis 'data'
+    resultats_complets = []
+    for cid in ids_selectionnes:
+        if cid in data:
+            doc = data[cid]
+            resultats_complets.append({
+                "id": cid,
+                "nom": doc.get('Objet', 'Sans nom'),
+                "date": doc.get('Date', 'N/A'),
+                "resume": doc.get('Résumé_analytique_détaillé', 'Aucun résumé disponible.'),
+            })
+    return resultats_complets
 
-# Interface
 st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
 query = st.text_input("Posez votre question :")
 
 if query:
-    with st.spinner("Analyse et structuration..."):
-        try:
-            results = obtenir_resultats_structures(query, data)
-            if results:
-                for res in results:
-                    with st.expander(f"📄 {res['nom']} ({res['date']})"):
-                        st.write(f"**Résumé :** {res['resume']}")
-                        st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
-            else:
-                st.info("Aucun résultat trouvé.")
-        except Exception as e:
-            st.error("Erreur lors de l'affichage.")
+    with st.spinner("Analyse..."):
+        results = obtenir_resultats_structures(query, data)
+        if results:
+            for res in results:
+                with st.expander(f"📄 {res['nom']} ({res['date']})"):
+                    st.write(f"**Résumé détaillé :**")
+                    st.write(res['resume']) # Ici on affiche le texte brut sans altération
+                    st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
+        else:
+            st.info("Aucun résultat trouvé.")

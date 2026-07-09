@@ -7,7 +7,7 @@ from google.oauth2 import service_account
 st.set_page_config(page_title="Explorateur Fiscal Gemini", layout="wide")
 st.title("🧠 Explorateur de Documents Fiscaux")
 
-# 1. Fonction de chargement sécurisé du JSON depuis le Drive
+# 1. Fonction de chargement sécurisé du JSON
 @st.cache_data(ttl=600)
 def charger_donnees_fiscales():
     creds_json = json.loads(st.secrets["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
@@ -16,9 +16,7 @@ def charger_donnees_fiscales():
     )
     service = build("drive", "v3", credentials=creds)
     
-    # ID de votre fichier JSON COMPLET GEMINI.json
     file_id = '1oBmUC5v7BUDPzDGi4IimaD4AVaetDqJV' 
-    
     request = service.files().get_media(fileId=file_id)
     content = request.execute()
     return json.loads(content)
@@ -31,7 +29,7 @@ except Exception as e:
     st.error(f"Erreur lors du chargement de l'index : {e}")
     data = {}
 
-# 3. Interface de recherche narrative
+# 3. Interface de recherche
 query = st.text_input("Posez votre question ou recherchez un sujet :")
 
 if query:
@@ -39,21 +37,24 @@ if query:
     found = False
     
     for file_id, info in data.items():
-        # Extraction sécurisée et conversion forcée en texte
+        # Sécurisation des champs pour éviter les erreurs de type (None ou non-liste)
         sujets = info.get('Sujets_traités', [])
-        if sujets is None: sujets = []
-        sujets_str = ", ".join(sujets) if isinstance(sujets, list) else str(sujets)
+        if sujets is None: 
+            sujets = []
+            
+        if isinstance(sujets, list):
+            sujets_str = ", ".join([str(s) for s in sujets])
+        else:
+            sujets_str = str(sujets)
         
         resume = info.get('Résumé_analytique_détaillé', "")
-        if resume is None: resume = ""
+        if resume is None: 
+            resume = ""
         
-        # Sécurisation ultime
-        try:
-            contenu_str = (str(sujets_str) + " " + str(resume)).lower()
-        except:
-            contenu_str = ""
+        # Concaténation pour la recherche
+        contenu_str = (sujets_str + " " + str(resume)).lower()
         
-        # Comparaison
+        # Comparaison par mots-clés
         if query.lower() in contenu_str:
             with st.expander(f"📄 {info.get('Nature', 'Document')} - {info.get('Date', 'Date inconnue')}"):
                 st.write(f"**Emetteur :** {info.get('Emetteur', 'Non spécifié')}")
@@ -61,7 +62,6 @@ if query:
                 st.write(f"**Résumé :** {resume}")
                 st.write(f"**Sujets :** {sujets_str}")
                 
-                # Utilisation du webViewLink officiel stocké dans le JSON ou lien de repli
                 lien = info.get('webViewLink', f"https://drive.google.com/open?id={file_id}")
                 st.markdown(f"[🔗 Ouvrir le document sur Google Drive]({lien})")
             found = True

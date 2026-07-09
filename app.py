@@ -4,13 +4,6 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-# CSS pour une interface plus légère
-st.markdown("""
-    <style>
-    .stMarkdown, .stText, .stExpander { font-size: 13px !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
 st.set_page_config(page_title="Recherche Fiscale", page_icon="📂")
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -25,30 +18,20 @@ def charger_donnees_depuis_drive():
     request = service.files().get_media(fileId=file_id)
     return json.loads(request.execute())
 
-def filtrage_intelligent(query, data, top_n=50):
-    query_words = set(query.lower().replace(" et ", " ").split())
-    scores = []
-    for doc_id, doc in data.items():
-        if not isinstance(doc, dict): continue
-        texte_doc = (str(doc.get('Objet', '')) + " " + str(doc.get('Résumé_analytique_détaillé', ''))).lower()
-        score = sum(1 for mot in query_words if mot in texte_doc)
-        if query.lower() in texte_doc: score += 5
-        scores.append((doc_id, doc, score))
-    scores.sort(key=lambda x: x[2], reverse=True)
-    return [s for s in scores if s[2] > 0][:top_n]
-
 def obtenir_resultats_structures(query, data):
-    candidats = filtrage_intelligent(query, data)
-    if not candidats: return None
-
-    # On prépare la liste des candidats pour que l'IA choisisse juste les indices
-    # On envoie le moins de texte possible pour accélérer l'IA
-    liste_candidats = [{"id": cid, "objet": doc.get('Objet')} for cid, doc, _ in candidats]
+    # On prépare tout le catalogue en texte simple pour l'IA
+    catalogue = ""
+    for doc_id, doc in data.items():
+        catalogue += f"ID: {doc_id} | OBJET: {doc.get('Objet', '')} | RÉSUMÉ: {doc.get('Résumé_analytique_détaillé', '')}\n"
     
+    # Prompt direct pour extraire les IDs des 10 plus pertinents
     prompt = f"""
     Requête utilisateur : "{query}"
-    Parmi la liste suivante, identifie les 10 documents les plus pertinents et retourne uniquement leurs ID dans une liste JSON.
-    Liste : {json.dumps(liste_candidats)}
+    Parmi les documents suivants, trouve les 10 plus pertinents. 
+    Retourne UNIQUEMENT une liste JSON d'IDs comme ceci: {{"ids": ["id1", "id2", ...]}}
+    
+    Catalogue :
+    {catalogue}
     """
     
     response = client.chat.completions.create(
@@ -57,33 +40,37 @@ def obtenir_resultats_structures(query, data):
         response_format={ "type": "json_object" }
     )
     
-    ids_selectionnes = json.loads(response.choices[0].message.content).get("ids", [])
+    data_json = json.loads(response.choices[0].message.content)
+    ids_selectionnes = data_json.get("ids", [])
     
-    # On reconstruit la liste finale en récupérant le texte COMPLET depuis 'data'
-    resultats_complets = []
+    # Construction de la réponse finale
+    resultats = []
     for cid in ids_selectionnes:
         if cid in data:
             doc = data[cid]
-            resultats_complets.append({
+            resultats.append({
                 "id": cid,
                 "nom": doc.get('Objet', 'Sans nom'),
                 "date": doc.get('Date', 'N/A'),
-                "resume": doc.get('Résumé_analytique_détaillé', 'Aucun résumé disponible.'),
+                "resume": doc.get('Résumé_analytique_détaillé', 'Aucun résumé disponible.')
             })
-    return resultats_complets
+    return resultats
 
 st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
 query = st.text_input("Posez votre question :")
 
 if query:
-    with st.spinner("Analyse..."):
-        results = obtenir_resultats_structures(query, data)
-        if results:
-            for res in results:
-                with st.expander(f"📄 {res['nom']} ({res['date']})"):
-                    st.write(f"**Résumé détaillé :**")
-                    st.write(res['resume']) # Ici on affiche le texte brut sans altération
-                    st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
-        else:
-            st.info("Aucun résultat trouvé.")
+    with st.spinner("Analyse intelligente en cours..."):
+        try:
+            results = obtenir_resultats_structures(query, data)
+            if results:
+                for res in results:
+                    with st.expander(f"📄 {res['nom']} ({res['date']})"):
+                        st.write(f"**Résumé détaillé :**")
+                        st.write(res['resume'])
+                        st.markdown(f"🔗 [Accéder au document sur Drive](https://drive.google.com/open?id={res['id']})")
+            else:
+                st.warning("Aucun document ne semble correspondre à votre requête.")
+        except Exception as e:
+            st.error(f"Erreur : {e}")

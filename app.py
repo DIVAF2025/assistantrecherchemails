@@ -50,7 +50,15 @@ def obtenir_resultats_structures(query, data):
     
     ids_selectionnes = json.loads(response.choices[0].message.content).get("ids", [])
     
-    return [data[cid] for cid in ids_selectionnes if cid in data]
+    # 3. Construction des résultats avec injection de l'ID pour garantir son existence
+    resultats_finaux = []
+    for cid in ids_selectionnes:
+        if cid in data:
+            doc_final = data[cid].copy()
+            doc_final['id'] = cid
+            resultats_finaux.append(doc_final)
+            
+    return resultats_finaux
 
 st.title("📂 Recherche Fiscale")
 data = charger_donnees_depuis_drive()
@@ -62,7 +70,7 @@ if query:
             results = obtenir_resultats_structures(query, data)
             if results:
                 for res in results:
-                    # On récupère l'ID en toute sécurité
+                    # On récupère l'ID injecté dans le dictionnaire
                     doc_id = res.get('id', '')
                     
                     with st.expander(f"📄 {res.get('Objet', 'Sans nom')} ({res.get('Date', 'N/A')})"):

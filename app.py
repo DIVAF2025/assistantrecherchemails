@@ -62,11 +62,17 @@ if query:
             results = obtenir_resultats_structures(query, data)
             if results:
                 for res in results:
+                    # On récupère l'ID en toute sécurité
+                    doc_id = res.get('id', '')
+                    
                     with st.expander(f"📄 {res.get('Objet', 'Sans nom')} ({res.get('Date', 'N/A')})"):
                         st.write("**Résumé détaillé :**")
-                        st.write(res.get('Résumé_analytique_détaillé', ''))
-                        st.markdown(f"🔗 [Accéder au document](https://drive.google.com/open?id={res.get('id', '')})")
-            else:
-                st.warning("Aucun résultat.")
+                        st.write(res.get('Résumé_analytique_détaillé', 'Aucun résumé disponible.'))
+                        
+                        # Ici le lien est corrigé avec l'ID dynamique
+                        if doc_id:
+                            st.markdown(f"🔗 [Accéder au document](https://drive.google.com/open?id={doc_id})")
+                        else:
+                            st.warning("Lien indisponible pour ce document.")
         except Exception as e:
             st.error(f"Erreur : {e}")

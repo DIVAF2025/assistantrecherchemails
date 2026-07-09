@@ -1,72 +1,47 @@
 import streamlit as st
 import json
-from googleapiclient.discovery import build
-from google.oauth2 import service_account
+import numpy as np
+from openai import OpenAI
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Configuration de la page
-st.set_page_config(page_title="Explorateur Fiscal Gemini", layout="wide")
-st.title("🧠 Explorateur de Documents Fiscaux")
+# Initialisation OpenAI
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# 1. Fonction de chargement sécurisé du JSON
+def get_embedding(text):
+    response = client.embeddings.create(input=[text], model="text-embedding-3-small")
+    return response.data[0].embedding
+
 @st.cache_data(ttl=600)
-def charger_donnees_fiscales():
-    creds_json = json.loads(st.secrets["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
-    creds = service_account.Credentials.from_service_account_info(
-        creds_json, scopes=["https://www.googleapis.com/auth/drive.readonly"]
-    )
-    service = build("drive", "v3", credentials=creds)
-    
-    file_id = '1oBmUC5v7BUDPzDGi4IimaD4AVaetDqJV' 
-    request = service.files().get_media(fileId=file_id)
-    content = request.execute()
-    return json.loads(content)
+def charger_donnees():
+    # Remplacez par le nom de votre fichier vecteur
+    with open('JSON_COMPLET_GEMINI_VECTEURS.json', 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-# 2. Chargement des données
-try:
-    data = charger_donnees_fiscales()
-    st.sidebar.success(f"{len(data)} documents indexés disponibles.")
-except Exception as e:
-    st.error(f"Erreur lors du chargement de l'index : {e}")
-    data = {}
+data = charger_donnees()
 
-# 3. Interface de recherche
-query = st.text_input("Posez votre question ou recherchez un sujet :")
+st.title("🧠 Explorateur Fiscal Sémantique")
+query = st.text_input("Posez votre question (ex: 'personnel de la DGI') :")
 
 if query:
-    st.write(f"Résultats pour : '{query}'")
-    found = False
-    
+    query_vec = np.array(get_embedding(query)).reshape(1, -1)
+    results = []
+
     for file_id, info in data.items():
-        # Sécurisation des champs pour éviter les erreurs de type (None ou non-liste)
-        sujets = info.get('Sujets_traités', [])
-        if sujets is None: 
-            sujets = []
-            
-        if isinstance(sujets, list):
-            sujets_str = ", ".join([str(s) for s in sujets])
-        else:
-            sujets_str = str(sujets)
-        
-        resume = info.get('Résumé_analytique_détaillé', "")
-        if resume is None: 
-            resume = ""
-        
-        # Concaténation pour la recherche
-        contenu_str = (sujets_str + " " + str(resume)).lower()
-        
-        # Comparaison par mots-clés
-        if query.lower() in contenu_str:
-            with st.expander(f"📄 {info.get('Nature', 'Document')} - {info.get('Date', 'Date inconnue')}"):
-                st.write(f"**Emetteur :** {info.get('Emetteur', 'Non spécifié')}")
-                st.write(f"**Objet :** {info.get('Objet', 'Non spécifié')}")
-                st.write(f"**Résumé :** {resume}")
-                st.write(f"**Sujets :** {sujets_str}")
-                
-                lien = info.get('webViewLink', f"https://drive.google.com/open?id={file_id}")
-                st.markdown(f"[🔗 Ouvrir le document sur Google Drive]({lien})")
-            found = True
-            
-    if not found:
-        st.info("Aucun document trouvé pour cette requête.")
-else:
-    st.write("Entrez un terme pour lancer la recherche dans votre base de données.")
+        doc_vec = info.get('embedding', [])
+        if doc_vec:
+            # Calcul de similarité
+            score = cosine_similarity(query_vec, np.array(doc_vec).reshape(1, -1))[0][0]
+            if score > 0.4: # Seuil de pertinence (ajustable)
+                results.append((score, info))
+
+    # Trier par score décroissant
+    results.sort(key=lambda x: x[0], reverse=True)
+
+    if results:
+        for score, info in results[:10]: # Affiche les 10 meilleurs
+            with st.expander(f"Pertinence: {score:.2f} | 📄 {info.get('Nature', 'Doc')}"):
+                st.write(f"**Résumé :** {info.get('Résumé_analytique_détaillé', '')}")
+                lien = info.get('webViewLink', '#')
+                st.markdown(f"[🔗 Ouvrir sur Drive]({lien})")
+    else:
+        st.info("Aucun résultat assez pertinent trouvé.")
